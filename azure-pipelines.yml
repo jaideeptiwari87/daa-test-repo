@@ -1,0 +1,98 @@
+trigger:
+  branches:
+    include:
+    - pk-self
+  paths:
+    exclude:
+      - 'azure-pipelines.yml'
+
+pool: daa-lab
+  # name: 'daa-lab'
+  # vmImage: 'daa-lab-agent'
+
+# pool:
+#   vmImage: 'windows-latest'
+stages:
+  - stage: Build_SQL_Dev
+    displayName: Building SQL dacpacfile
+    jobs:
+      - job: Creating
+        displayName: "Creating Artifact in dev"
+        steps:
+
+          - powershell: |
+              tree "$(system.defaultworkingdirectory)" /F
+            displayName: "Treeview of system.defaultworkingdirectory"   
+          - task: VSBuild@1
+            inputs:
+              solution: '**\*.sln'
+              platform: 'Any CPU'
+              configuration: 'Release'
+              vsVersion: '17.0'
+              msbuildArchitecture: 'x64'
+
+          - powershell: |
+              tree "$(system.defaultworkingdirectory)" /F
+            displayName: "Treeview of system.defaultworkingdirectory"            
+          - task: CopyFiles@2
+            inputs:
+              SourceFolder: $(system.defaultworkingdirectory)
+              Contents: '**'
+              TargetFolder: '$(build.artifactstagingdirectory)'
+            displayName: 'Copy Files to: $(build.artifactstagingdirectory)'
+
+          - powershell: |
+              tree "$(Build.ArtifactStagingDirectory)" /F
+            displayName: "Treeview of Build.ArtifactStagingDirectory"  
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: '$(build.artifactstagingdirectory)'
+              artifact: 'artifact'
+              publishLocation: 'pipeline'        
+
+          - powershell: |
+              tree "$(build.artifactstagingdirectory)" /F
+            displayName: "Treeview of build.artifactstagingdirectory"
+
+  - stage: SQL_QA_Release
+    displayName: Deploying SQL database in QA
+    jobs:
+      - job:
+        displayName: Deploying to QA
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: artifact
+              targetPath: '$(Pipeline.Workspace)'
+          - powershell: |
+              tree "$(Pipeline.Workspace)" /F
+            displayName: "Treeview of Pipeline.Workspace" 
+          - task: SqlAzureDacpacDeployment@1
+            inputs:
+              azureSubscription: 'dep-service-connection'
+              AuthenticationType: 'server'
+              ServerName: 'daa-dev.database.windows.net'
+              DatabaseName: 'daa-dev-lab'
+              SqlUsername: 'daaadmin'
+              SqlPassword: 'dataadmin@123'
+              deployType: 'DacpacTask'
+              DeploymentAction: 'Publish'
+              DacpacFile: '$(Pipeline.Workspace)/Database1/bin/Release/**\*.dacpac'
+              IpDetectionMethod: 'AutoDetect'
+              AdditionalArguments: /v:ResetStuff=Y /v:Environment=TST
+              
+
+
+  # #         - task: SqlAzureDacpacDeployment@1
+  # #           inputs:
+  # #             azureSubscription: 'dep-service-connection'
+  # #             AuthenticationType: 'server'
+  # #             ServerName: 'dacpacdemoserver.database.windows.net'
+  # #             DatabaseName: 'dacpacdemosqldb'
+  # #             SqlUsername: 'dacpac'
+  # #             SqlPassword: 'azure@123'
+  # #             deployType: 'DacpacTask'
+  # #             DeploymentAction: 'Publish'
+  # #             DacpacFile: '$(Pipeline.Workspace)/databases/mydatabase2/mydatabase2/bin/Release/**\*.dacpac'
+  # #             IpDetectionMethod: 'AutoDetect'
+
